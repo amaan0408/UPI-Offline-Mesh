@@ -88,5 +88,7 @@ public class BridgeIngestionService {
         public static IngestResult invalid(String hash, String reason) {
             return new IngestResult("INVALID", hash, reason, null);
         }
+
+        .
     }
 }
