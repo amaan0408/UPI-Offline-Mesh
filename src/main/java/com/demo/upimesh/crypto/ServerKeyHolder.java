@@ -4,7 +4,11 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyFactory;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
@@ -30,10 +34,44 @@ public class ServerKeyHolder {
 
     @PostConstruct
     public void init() throws Exception {
-        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
-        gen.initialize(2048);
-        this.keyPair = gen.generateKeyPair();
-        log.info("Server RSA keypair generated (2048-bit). Public key fingerprint: {}",
+        Path publicKeyPath = Path.of("keys", "public.key");
+        Path privateKeyPath = Path.of("keys", "private.key");
+
+        if (Files.exists(publicKeyPath) && Files.exists(privateKeyPath)) {
+
+            byte[] publicKeyBytes = Files.readAllBytes(publicKeyPath);
+            byte[] privateKeyBytes = Files.readAllBytes(privateKeyPath);
+
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+
+            PublicKey publicKey = keyFactory.generatePublic(
+                    new X509EncodedKeySpec(publicKeyBytes)
+            );
+
+            PrivateKey privateKey = keyFactory.generatePrivate(
+                    new PKCS8EncodedKeySpec(privateKeyBytes)
+            );
+
+            this.keyPair = new KeyPair(publicKey, privateKey);
+
+            log.info("Loaded existing shared RSA keypair");
+
+        } else {
+
+            Files.createDirectories(publicKeyPath.getParent());
+
+            KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+            gen.initialize(2048);
+
+            this.keyPair = gen.generateKeyPair();
+
+            Files.write(publicKeyPath, keyPair.getPublic().getEncoded());
+            Files.write(privateKeyPath, keyPair.getPrivate().getEncoded());
+
+            log.info("Generated and saved shared RSA keypair");
+        }
+
+        log.info("Public key fingerprint: {}",
                 getPublicKeyBase64().substring(0, 32) + "...");
     }
 

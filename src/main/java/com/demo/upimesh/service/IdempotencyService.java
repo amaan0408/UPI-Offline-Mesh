@@ -1,11 +1,14 @@
 package com.demo.upimesh.service;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-
+import org.springframework.beans.factory.annotation.Value;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -23,35 +26,42 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Service
 public class IdempotencyService {
+    private final StringRedisTemplate redisTemplate;
+
 
     private final Map<String, Instant> seen = new ConcurrentHashMap<>();
 
-    @Value("${upi.mesh.idempotency-ttl-seconds:86400}")
+    @Value("${idempotency.ttl-seconds}")
     private long ttlSeconds;
+
+    public IdempotencyService(StringRedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
 
     /**
      * Try to claim a hash. Returns true if this caller is the first; false if
      * someone else already claimed it (i.e. the packet is a duplicate).
      */
     public boolean claim(String packetHash) {
-        Instant now = Instant.now();
-        Instant prev = seen.putIfAbsent(packetHash, now);
-        return prev == null;
+        String key = "idempotency:" + packetHash;
+
+        Boolean claimed = redisTemplate.opsForValue()
+                .setIfAbsent(key, "PROCESSING", Duration.ofSeconds(ttlSeconds));
+
+        return Boolean.TRUE.equals(claimed);
     }
 
     public int size() {
-        return seen.size();
-    }
-
-    /** Periodically evict entries past their TTL so the map doesn't grow forever. */
-    @Scheduled(fixedDelay = 60_000)
-    public void evictExpired() {
-        Instant cutoff = Instant.now().minusSeconds(ttlSeconds);
-        seen.entrySet().removeIf(e -> e.getValue().isBefore(cutoff));
+        Set<String> keys = redisTemplate.keys("idempotency:*");
+        return keys !=  null ? keys.size() : 0;
     }
 
     /** Test/demo helper. */
     public void clear() {
-        seen.clear();
+        Set<String> keys = redisTemplate.keys("idempotency:*");
+
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
     }
 }

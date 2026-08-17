@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>upi::mesh — live demo</title>
+    <style>
+        :root {
+            --bg: #0a0d0c;
+            --panel: #121614;
+            --border: #1e2422;
+            --text: #e6ece9;
+            --text-dim: #7c8a84;
+            --accent: #3ddc84;
+            --ok: #3ddc84;
+            --warn: #e0a83e;
+            --err: #e0524c;
+            --mono: 'Consolas', 'Monaco', monospace;
+            --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: var(--sans);
+            margin: 0; padding: 24px;
+            background: var(--bg); color: var(--text);
+        }
+        h1 { margin-top: 0; color: var(--text); font-weight: 500; font-size: 20px; letter-spacing: 0.01em; }
+        h1 .accent { color: var(--accent); }
+        h2 {
+            color: var(--text-dim); font-size: 11px; text-transform: uppercase;
+            letter-spacing: 0.08em; border-bottom: 1px solid var(--border);
+            padding-bottom: 8px; margin-top: 32px; font-weight: 600;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .grid { display: grid; gap: 16px; }
+        .grid-2 { grid-template-columns: 1fr 1fr; }
+        @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .device {
+            border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 8px;
+            background: var(--bg);
+        }
+        .device.bridge { border-color: var(--accent); }
+        .device.offline { opacity: 0.7; }
+        .badge {
+            display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
+            font-weight: 600; margin-left: 8px; font-family: var(--mono);
+        }
+        .badge-online { background: rgba(61,220,132,0.15); color: var(--ok); border: 1px solid var(--ok); }
+        .badge-offline { background: rgba(124,138,132,0.15); color: var(--text-dim); border: 1px solid var(--border); }
+        .packet-id {
+            font-family: var(--mono); font-size: 11px;
+            background: var(--panel); border: 1px solid var(--border);
+            padding: 2px 6px; border-radius: 3px; margin: 2px; display: inline-block;
+            color: var(--text-dim);
+        }
+        button {
+            background: transparent; color: var(--text); border: 1px solid var(--border);
+            padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;
+            font-weight: 500; margin: 4px; font-family: var(--sans);
+            transition: border-color 0.15s ease;
+        }
+        button:hover { border-color: var(--accent); }
+        button.danger:hover { border-color: var(--err); color: var(--err); }
+        button.secondary:hover { border-color: #58a6ff; color: #58a6ff; }
+        input, select {
+            background: var(--bg); color: var(--text); border: 1px solid var(--border);
+            border-radius: 4px; padding: 6px 10px; font-size: 13px; margin: 4px;
+            font-family: var(--sans);
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+        .status-SETTLED { color: var(--ok); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+        .status-REJECTED { color: var(--err); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+        .status-DUPLICATE_DROPPED { color: var(--warn); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+        .status-INVALID { color: var(--err); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+        .status-PENDING { color: var(--warn); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+        #log {
+            background: #060807; color: var(--accent); padding: 12px; border-radius: 6px;
+            font-family: var(--mono); font-size: 12px;
+            max-height: 220px; overflow-y: auto; white-space: pre-wrap;
+            border: 1px solid var(--border);
+        }
+        .controls { background: var(--panel); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px; }
+        .step-num {
+            display: inline-block; background: var(--accent); color: #0a0d0c;
+            border-radius: 50%; width: 22px; height: 22px; text-align: center;
+            line-height: 22px; font-weight: 700; margin-right: 8px; font-size: 12px;
+        }
+        .balance { font-family: var(--mono); color: var(--ok); font-weight: 600; }
+        .small { font-size: 12px; color: var(--text-dim); }
+        #connError {
+            display: none; background: rgba(224,82,76,0.1); border: 1px solid var(--err);
+            color: var(--err); padding: 10px 14px; border-radius: 6px; font-size: 13px;
+            margin-bottom: 16px; font-family: var(--mono);
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>upi<span class="accent">::</span>mesh — live demo</h1>
+    <p class="small">
+        Send money in a basement with zero internet. Encrypted packets gossip from phone to phone
+        until one with 4G reaches the backend.
+    </p>
+
+    <div id="connError"></div>
+
+    <div class="controls">
+        <h3 style="margin-top:0; color:var(--text); font-weight:500; font-size:14px;">Demo flow</h3>
+
+        <div>
+            <span class="step-num">1</span><strong>Compose payment</strong> (simulates sender phone)
+            <br>
+            <select id="senderVpa">
+                <option>alice@demo</option>
+                <option>bob@demo</option>
+                <option>carol@demo</option>
+            </select>
+            &rarr;
+            <select id="receiverVpa">
+                <option>bob@demo</option>
+                <option>carol@demo</option>
+                <option>alice@demo</option>
+                <option>dave@demo</option>
+            </select>
+            &#8377;<input type="number" id="amount" value="500" style="width: 100px">
+            PIN <input type="text" id="pin" value="1234" style="width: 80px" maxlength="4">
+            <button onclick="sendPacket()">Inject into mesh</button>
+        </div>
+
+        <div style="margin-top: 16px">
+            <span class="step-num">2</span><strong>Gossip</strong> — packets hop device-to-device
+            <button class="secondary" onclick="gossip()">Run gossip round</button>
+        </div>
+
+        <div style="margin-top: 16px">
+            <span class="step-num">3</span><strong>Bridge node walks outside, hits 4G</strong>
+            <button class="secondary" onclick="flushBridges()">Bridges upload to backend</button>
+            <span class="small">(parallel — exercises idempotency)</span>
+        </div>
+
+        <div style="margin-top: 16px">
+            <button class="danger" onclick="resetMesh()">Reset mesh + cache</button>
+        </div>
+    </div>
+
+    <div class="grid grid-2">
+        <div class="card">
+            <h2>Mesh devices</h2>
+            <div id="devices"></div>
+        </div>
+
+        <div class="card">
+            <h2>Account balances</h2>
+            <table id="accounts-table">
+                <thead><tr><th>VPA</th><th>Holder</th><th>Balance</th></tr></thead>
+                <tbody></tbody>
+            </table>
+            <p class="small" id="cacheInfo"></p>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px">
+        <h2>Transaction ledger</h2>
+        <table id="tx-table">
+            <thead><tr>
+                <th>ID</th><th>From</th><th>To</th><th>Amount</th>
+                <th>Status</th><th>Bridge</th><th>Hops</th><th>Settled</th>
+            </tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="card" style="margin-top: 16px">
+        <h2>Activity log</h2>
+        <div id="log"></div>
+    </div>
+</div>
+
+<script>
+    function log(msg) {
+        const el = document.getElementById('log');
+        el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n' + el.textContent;
+    }
+
+    function showConnError(msg) {
+        const el = document.getElementById('connError');
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
+    function clearConnError() {
+        document.getElementById('connError').style.display = 'none';
+    }
+
+    // Wraps fetch + json parsing with a clear error instead of a silent throw.
+    async function safeFetchJson(url, options) {
+        let res;
+        try {
+            res = await fetch(url, options);
+        } catch (e) {
+            throw new Error(`network error calling ${url} — is the backend running? (${e.message})`);
+        }
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            throw new Error(`${url} returned ${res.status} ${res.statusText}${body ? ' — ' + body : ''}`);
+        }
+        try {
+            return await res.json();
+        } catch (e) {
+            throw new Error(`${url} did not return valid JSON`);
+        }
+    }
+
+    function fmtSettledAt(value) {
+        if (!value) return '—';
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString();
+    }
+
+    async function refresh() {
+        try {
+            const m = await safeFetchJson('/api/mesh/state');
+            const devicesDiv = document.getElementById('devices');
+            devicesDiv.innerHTML = (m.devices || []).map(d => `
+                <div class="device ${d.hasInternet ? 'bridge' : 'offline'}">
+                    <strong>${d.deviceId}</strong>
+                    <span class="badge ${d.hasInternet ? 'badge-online' : 'badge-offline'}">
+                        ${d.hasInternet ? '4G' : 'OFFLINE'}
+                    </span>
+                    <span class="small">holding ${d.packetCount} packet(s)</span>
+                    <div>${(d.packetIds || []).map(id => `<span class="packet-id">${id}</span>`).join('')}</div>
+                </div>
+            `).join('');
+            document.getElementById('cacheInfo').textContent =
+                `Idempotency cache size: ${m.idempotencyCacheSize}`;
+
+            const accs = await safeFetchJson('/api/accounts');
+            document.querySelector('#accounts-table tbody').innerHTML = accs.map(a => `
+                <tr><td>${a.vpa}</td><td>${a.holderName}</td>
+                    <td class="balance">&#8377;${parseFloat(a.balance).toFixed(2)}</td></tr>
+            `).join('');
+
+            const txs = await safeFetchJson('/api/transactions');
+            document.querySelector('#tx-table tbody').innerHTML = txs.map(t => `
+                <tr>
+                    <td>${t.id}</td><td>${t.senderVpa}</td><td>${t.receiverVpa}</td>
+                    <td class="balance">&#8377;${parseFloat(t.amount).toFixed(2)}</td>
+                    <td class="status-${t.status}">${t.status}</td>
+                    <td>${t.bridgeNodeId || '—'}</td><td>${t.hopCount}</td>
+                    <td class="small">${fmtSettledAt(t.settledAt)}</td>
+                </tr>
+            `).join('');
+
+            clearConnError();
+        } catch (e) {
+            showConnError(e.message);
+            log('refresh failed: ' + e.message);
+        }
+    }
+
+    async function sendPacket() {
+        const body = {
+            senderVpa: document.getElementById('senderVpa').value,
+            receiverVpa: document.getElementById('receiverVpa').value,
+            amount: parseFloat(document.getElementById('amount').value),
+            pin: document.getElementById('pin').value,
+            ttl: 5,
+            startDevice: 'phone-alice'
+        };
+        try {
+            const r = await safeFetchJson('/api/demo/send', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            log(`packet ${r.packetId.substring(0,8)} encrypted & injected at ${r.injectedAt} (TTL ${r.ttl})`);
+            log(`   ciphertext (truncated): ${r.ciphertextPreview}`);
+            await refresh();
+        } catch (e) {
+            showConnError(e.message);
+            log('send failed: ' + e.message);
+        }
+    }
+
+    async function gossip() {
+        try {
+            const r = await safeFetchJson('/api/mesh/gossip', {method: 'POST'});
+            log(`gossip: ${r.transfers} transfer(s) — ${JSON.stringify(r.deviceCounts)}`);
+            await refresh();
+        } catch (e) {
+            showConnError(e.message);
+            log('gossip failed: ' + e.message);
+        }
+    }
+
+    async function flushBridges() {
+        try {
+            const r = await safeFetchJson('/api/mesh/flush', {method: 'POST'});
+            log(`${r.uploadsAttempted} bridge upload(s):`);
+            (r.results || []).forEach(res => {
+                log(`   ${res.bridgeNode} packet ${res.packetId} -> ${res.outcome}` +
+                    (res.reason ? ` (${res.reason})` : ''));
+            });
+            await refresh();
+        } catch (e) {
+            showConnError(e.message);
+            log('flush failed: ' + e.message);
+        }
+    }
+
+    async function resetMesh() {
+        try {
+            await safeFetchJson('/api/mesh/reset', {method: 'POST'});
+            log('mesh + idempotency cache cleared');
+            await refresh();
+        } catch (e) {
+            showConnError(e.message);
+            log('reset failed: ' + e.message);
+        }
+    }
+
+    refresh();
+    setInterval(refresh, 3000);
+</script>
+</body>
+</html>

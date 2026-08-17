@@ -1,6 +1,8 @@
 package com.demo.upimesh.service;
 
 import com.demo.upimesh.model.MeshPacket;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -54,6 +56,12 @@ public class MeshSimulatorService {
         VirtualDevice sender = devices.get(senderDeviceId);
         if (sender == null) throw new IllegalArgumentException("Unknown device: " + senderDeviceId);
         sender.hold(packet);
+        try {
+            log.info("DEBUG PACKET FOR DISTRIBUTED TEST: {}",
+                    new ObjectMapper().writeValueAsString(packet));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
         log.info("Packet {} injected at {} (TTL={})",
                 packet.getPacketId().substring(0, 8), senderDeviceId, packet.getTtl());
     }
