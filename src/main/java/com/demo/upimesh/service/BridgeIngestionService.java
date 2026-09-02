@@ -37,8 +37,12 @@ public class BridgeIngestionService {
     private long maxAgeSeconds;
 
     public IngestResult ingest(MeshPacket packet, String bridgeNodeId, int hopCount) {
+
+        String packetHash = null;
+        boolean claimed = false;
+
         try {
-            String packetHash = crypto.hashCiphertext(packet.getCiphertext());
+            packetHash = crypto.hashCiphertext(packet.getCiphertext());
 
             // ---- Idempotency gate ----
             if (!idempotency.claim(packetHash)) {
@@ -47,6 +51,8 @@ public class BridgeIngestionService {
                 return IngestResult.duplicate(packetHash);
             }
 
+            claimed = true;
+
             // ---- Decrypt ----
             PaymentInstruction instruction;
             try {
@@ -54,27 +60,51 @@ public class BridgeIngestionService {
             } catch (Exception e) {
                 log.warn("Decryption failed for packet {}: {}",
                         packetHash.substring(0, 12) + "...", e.getMessage());
+
+                idempotency.release(packetHash);
                 return IngestResult.invalid(packetHash, "decryption_failed");
             }
 
-            // ---- Freshness check (replay protection) ----
-            long ageSeconds = (Instant.now().toEpochMilli() - instruction.getSignedAt()) / 1000;
+            // ---- Freshness check ----
+            long ageSeconds =
+                    (Instant.now().toEpochMilli() - instruction.getSignedAt()) / 1000;
+
             if (ageSeconds > maxAgeSeconds) {
                 log.warn("Packet {} too old ({}s), rejected",
                         packetHash.substring(0, 12) + "...", ageSeconds);
+
+                idempotency.release(packetHash);
                 return IngestResult.invalid(packetHash, "stale_packet");
             }
-            if (ageSeconds < -300) { // small clock-skew tolerance
+
+            if (ageSeconds < -300) {
+                idempotency.release(packetHash);
                 return IngestResult.invalid(packetHash, "future_dated");
             }
 
             // ---- Settle ----
-            Transaction tx = settlement.settle(instruction, packetHash, bridgeNodeId, hopCount);
+            Transaction tx =
+                    settlement.settle(instruction, packetHash, bridgeNodeId, hopCount);
+
+            // Settlement succeeded, permanently mark this packet as completed
+            idempotency.markSettled(packetHash);
+
             return IngestResult.settled(packetHash, tx);
 
         } catch (Exception e) {
+
+            // We claimed the packet but processing failed before successful settlement.
+            // Release it so a retry can attempt processing again.
+            if (claimed && packetHash != null) {
+                idempotency.release(packetHash);
+            }
+
             log.error("Ingestion error: {}", e.getMessage(), e);
-            return IngestResult.invalid("?", "internal_error: " + e.getMessage());
+
+            return IngestResult.invalid(
+                    packetHash != null ? packetHash : "?",
+                    "internal_error: " + e.getMessage()
+            );
         }
     }
 
