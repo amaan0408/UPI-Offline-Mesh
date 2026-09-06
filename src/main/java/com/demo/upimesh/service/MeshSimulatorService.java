@@ -126,6 +126,7 @@ public class MeshSimulatorService {
             for (MeshPacket pkt : d.getHeldPackets()) {
                 out.add(new BridgeUpload(d.getDeviceId(), pkt));
             }
+
         }
         return out;
     }
