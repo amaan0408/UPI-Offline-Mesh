@@ -32,6 +32,7 @@ public class SettlementService {
     @Autowired private AccountRepository accounts;
     @Autowired private TransactionRepository transactions;
 
+    
     @Transactional
     public Transaction settle(PaymentInstruction instruction, String packetHash,
                               String bridgeNodeId, int hopCount) {
